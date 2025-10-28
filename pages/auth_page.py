@@ -1,5 +1,7 @@
 import allure
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.by import By
+from urls import Urls
 from locators.auth_locators import AuthLocators
 from pages.base_page import BasePage
 from logger import logger
@@ -8,95 +10,77 @@ from logger import logger
 class AuthPage(BasePage):
     """Page Object для страницы авторизации."""
 
-    @allure.step("Авторизация пользователя")
+    @allure.step("Авторизация пользователя: {email}")
     def auth(self, email, password):
         """Выполнить авторизацию пользователя."""
-        logger.info("Начало процесса авторизации для пользователя: %s", email)
-    
-        logger.debug("Ввод email в поле логина")
-        self.send_keys_to_input(AuthLocators.FIELD_EMAIL_LOGIN, email)
-    
-        logger.debug("Ввод пароля в поле пароля")
-        self.send_keys_to_input(AuthLocators.FIELD_PASSWORD_LOGIN, password)
-    
-        logger.info("Нажатие кнопки 'Войти' для завершения авторизации")
-        self.click_on_element(AuthLocators.BUTTON_ENTRANCE)
-    
-        logger.debug("Ожидание завершения авторизации")
+        logger.info(f"Начало авторизации пользователя: {email}")
+
+        self._enter_email(email)
+        self._enter_password(password)
+        self._click_login_button()
         self._wait_for_auth_completion()
 
-        from data import Urls
         current_url = self.get_current_url()
         if "login" in current_url:
-            logger.warning("После авторизации остались на странице логина. Переходим на главную...")
-            self.driver.get(Urls.BASE_URL)
+            logger.warning("После авторизации остались на странице логина. Переход на главную...")
+            self.open_url(Urls.BASE_URL)
             self.wait_for_condition(
-                lambda driver: driver.execute_script("return document.readyState") == "complete",
-                timeout=10,
-                description="полная загрузка страницы"
+                lambda d: self.execute_js("return document.readyState") == "complete",
+                timeout=10
             )
-    
-        logger.debug("Обработка возможного OVERLAY после авторизации")
-        self.close_overlay_if_present()
-        self.wait_for_overlay_to_disappear(5)
-    
-        logger.info("Процесс авторизации завершен")
-        
-    @allure.step("Ожидание завершения процесса авторизации.")
+
+        logger.info("Авторизация завершена успешно")
+
+    # ------------------------------------------------------------
+    # Вспомогательные шаги
+    # ------------------------------------------------------------
+    @allure.step("Ввод email: {email}")
+    def _enter_email(self, email):
+        logger.debug("Ввод email")
+        self.input_text(AuthLocators.FIELD_EMAIL_LOGIN, email)
+
+    @allure.step("Ввод пароля")
+    def _enter_password(self, password):
+        logger.debug("Ввод пароля")
+        self.input_text(AuthLocators.FIELD_PASSWORD_LOGIN, password)
+
+    @allure.step("Нажатие кнопки 'Войти'")
+    def _click_login_button(self):
+        logger.debug("Нажатие кнопки 'Войти'")
+        self.click(AuthLocators.BUTTON_ENTRANCE)
+
+    @allure.step("Ожидание завершения авторизации")
     def _wait_for_auth_completion(self):
-        logger.debug("Ожидание завершения авторизации")
         try:
             self.wait_for_condition(
-                lambda driver: (
-                    self._is_on_main_page() or 
-                    self._is_auth_error_present() or
-                    self._is_still_on_login_page()
-                ),
-                timeout=10,
-                description="ожидание завершения авторизации"
+                lambda d: self._is_on_main_page() or self._is_auth_error_present(),
+                timeout=10
             )
-            
             if self._is_on_main_page():
-                logger.debug("Авторизация прошла успешно")
+                logger.info("Авторизация прошла успешно")
             elif self._is_auth_error_present():
                 logger.error("Ошибка авторизации")
                 self.take_screenshot("auth_error")
                 raise Exception("Ошибка авторизации")
-            else:
-                logger.warning("Авторизация не завершилась")
-                
         except TimeoutException:
-            logger.error("Таймаут ожидания завершения авторизации")
+            logger.error("Таймаут ожидания авторизации")
             self.take_screenshot("auth_timeout")
             raise
 
-    @allure.step("Проверить, находимся ли на главной странице.")
+    # ------------------------------------------------------------
+    # Проверки состояния
+    # ------------------------------------------------------------
     def _is_on_main_page(self):
-        from data import Urls
-        return self.is_url_contains(Urls.BASE_URL)
+        return Urls.BASE_URL in self.get_current_url()
 
-    @allure.step("Проверить наличие сообщения об ошибке авторизации.")
     def _is_auth_error_present(self):
-        error_selectors = [
-            "//p[contains(@class, 'error')]",
-            "//div[contains(@class, 'error')]",
-            "//p[contains(text(), 'error')]",
-            "//p[contains(text(), 'ошибка')]"
+        selectors = [
+            (By.XPATH, "//p[contains(@class, 'error')]"),
+            (By.XPATH, "//div[contains(@class, 'error')]"),
+            (By.XPATH, "//p[contains(text(), 'error')]"),
+            (By.XPATH, "//p[contains(text(), 'ошибка')]")
         ]
-        
-        for selector in error_selectors:
-            try:
-                self.find_element_by_xpath(selector)
+        for locator in selectors:
+            if self.is_element_present(locator):
                 return True
-            except:
-                continue
         return False
-    
-    @allure.step("Проверить, остались ли на странице логина.")
-    def _is_still_on_login_page(self):
-        return self.is_url_contains("login")
-
-    @allure.step("Найти элемент по XPath.")
-    def find_element_by_xpath(self, xpath):
-        from selenium.webdriver.common.by import By
-        return self.driver.find_element(By.XPATH, xpath)
