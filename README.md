@@ -51,7 +51,6 @@ conftest.py          # фикстуры и setup
 data.py              # тестовые данные и credentials
 urls.py              # URL приложения
 logger.py            # логирование тестов
-screenshots/         # скриншоты падений
 ```
 
 ---
